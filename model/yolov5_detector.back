@@ -1,0 +1,43 @@
+# model/yolov5_detector.py
+import torch
+import logging
+
+class YOLOv5Detector:
+    classes = {
+        "vehicle": [3, 6, 7, 8],
+        "person": [1, 2, 4],
+        "roadside-objects": [10, 11, 13, 14]
+    }
+    rpn_threshold = 0.1
+    def __init__(self, model_path):
+        self.logger = logging.getLogger("yolov5_detector")
+        handler = logging.NullHandler()
+        self.logger.addHandler(handler)
+        self.model = None
+        self.load_model(model_path)
+
+    def load_model(self, model_path):
+        self.logger.info(f"Loading YOLOv5 model from {model_path}")
+        # Load the model using the provided path
+        self.model = torch.hub.load('ultralytics/yolov5', 'yolov5x', pretrained=True)
+        # self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_path)
+        self.model.eval()  # Set the model to evaluation mode
+    def get_class_label(self, label):
+        for class_name, labels in self.classes.items():
+            if label in labels:
+                return class_name
+        return "object"
+    def infer(self, image):
+        # Perform inference on the image
+        results = self.model(image)
+        detection_results = results.xywh[0].cpu().numpy()
+        # Convert results to the required format
+        detections = []
+        results_rpn = []
+        for x, y, w, h, conf, label in detection_results:
+            class_label = self.get_class_label(int(label))
+            if class_label=="object" and conf<YOLOv5Detector.rpn_threshold:
+                results_rpn.append((class_label, conf, (x, y, w, h)))
+                continue
+            detections.append((class_label, float(conf), (float(x), float(y), float(w), float(h))))
+        return detections, results_rpn  # YOLO does not provide RPN results

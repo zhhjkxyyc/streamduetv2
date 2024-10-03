@@ -1,0 +1,137 @@
+data_dir: '../dataset'
+models:
+  yolov5:
+    type: 'yolov5'
+    path: 'model/yolov5x6.pt'  # Example path to YOLOv5 model weights
+    config_path: 'model/yolov5_detector.py'  # Path to the YOLOv5 detector script
+  tensorflow:
+    type: 'tensorflow'
+    path: 'model/frozen_inference_graph.pb'  # Example path to TensorFlow model
+    config_path: 'model/tensorflow_detector.py'  # Path to the TensorFlow detector script
+
+default:
+  overwrite: False
+#  video_name: trafficcam_1
+  max_object_size: 0.3
+  low_threshold: 0.5
+  high_threshold: 0.8
+  cache_conf_threshold: 0.5
+  RoI_cache_conf_threshold: 0.8
+  enforce_iframes: True
+  verbosity: info
+  simulate: False
+  hname: False
+  intersection_threshold: 1.0
+  low_results_path: None
+  high_results_path: None
+  high_resolution: -1
+  high_qp: -1
+  estimate_banwidth: False
+  low_images_path: None
+  tracker_length: 4
+  batch_size: 15
+  min_object_size: 0
+  boundary: 0.2
+  tracking_threshold: 0.3
+  suppression_threshold: 0.5
+  rpn_enlarge_ratio: 0
+  prune_score: 1.1
+  objfilter_iou: 1.1
+  size_obj: 1.1
+  debug_mode: False
+  ground_truth: False
+  mode: emulation
+  time_window: 6
+  RoI_time_window: 3
+  cache_dir: "results/inferenceCache"
+  RoI_cache_dir: "results/RoICache"
+  RoI_cache_residual_threshold : 2
+  relevant_classes:
+    - car
+    - bicycle
+    - person
+#    - roadside-objects
+
+# List of video names
+video_names:
+  - "53-1"
+  - "53-2"
+
+#video_names:
+#  - "28-1"
+#  - "28-2"
+instances:
+- method: gt
+  low_qp: 0
+  low_resolution: 1.0
+  model_type: 'yolov5'
+  hname: False
+
+- method: mpeg
+  low_qp:
+  - 0
+  - 10
+  low_resolution: 0.8
+  model_type: 'yolov5' # or 'tensorflow'
+  hname: False
+
+- method: dds
+  batch_size: 15
+  high_qp: 0
+  high_resolution: 1
+  low_qp: 10
+  low_resolution: 0.8
+  objfilter_iou: 0.5
+  prune_score: 0.01
+  rpn_enlarge_ratio: 0.0
+  size_obj: 0.01
+  hname: False
+  debug_mode: True
+  mode: emulation
+  model_type: 'yolov5'
+
+- method: streamduet
+  batch_size: 15
+  high_qp: 0
+  high_resolution: 1
+  low_qp: 10
+  low_resolution: 0.8
+  objfilter_iou: 0.5
+  prune_score: 0.01
+  rpn_enlarge_ratio: 0.0
+  size_obj: 0.01
+  hname: False
+  debug_mode: True
+  mode: emulation
+  model_type: 'yolov5'
+
+
+#- method: streamduet
+#  batch_size: 15
+#  high_qp: 20
+#  high_resolution: 1
+#  low_qp: 20
+#  low_resolution: 0.5
+#  objfilter_iou: 0.3
+#  prune_score: 0.01
+#  rpn_enlarge_ratio: 0.0
+#  size_obj: 0.01
+#  hname: False
+#  debug_mode: True
+#  mode: emulation
+#  model_type: 'yolov5'
+
+- method: streamduetRoI
+  batch_size: 15
+  high_qp: 0
+  high_resolution: 1
+  low_qp: 10
+  low_resolution: 0.8
+  objfilter_iou: 0.5
+  prune_score: 0.01
+  rpn_enlarge_ratio: 0.0
+  size_obj: 0.01
+  hname: False
+  debug_mode: True
+  mode: emulation
+  model_type: 'yolov5'
