@@ -4,7 +4,7 @@ import os
 import subprocess
 from copy import deepcopy
 import threading
-from collections import defaultdict
+
 sys.path.append('../')
 from instance_executor import InstanceFactory
 
@@ -13,48 +13,27 @@ def load_configuration():
         config_info = yaml.safe_load(config)
     return config_info
 
-
-def parameter_sweeping(instances, new_instance, keys, config_info, config_dict, data_dir):
-    def group_videos_by_prefix(video_names):
-        grouped_videos = defaultdict(list)
-        for video_name in video_names:
-            prefix = video_name.split('-')[0]  # 通过 '-' 分割并获取前缀
-            grouped_videos[prefix].append(video_name)
-        return grouped_videos
-
+def parameter_sweeping(instances, new_instance, keys, config_info,config_dict, data_dir):
     if not keys:
         threads = []
-        # 按前缀分组
-        grouped_videos = group_videos_by_prefix(config_info['video_names'])
-
-        # 遍历每个分组
-        for prefix, video_group in grouped_videos.items():
-            # 在同一组中的视频一起执行
-            executors = []
-            for video_name in video_group:
-                instance_config = config_dict[video_name]
-                executor = InstanceFactory.get_instance_executor(new_instance, video_name, instance_config, data_dir)
-                executors.append(executor)
-
-            # 创建并启动线程
-            for executor in executors:
-                t = threading.Thread(target=executor.execute, args=())
-                threads.append(t)
-                t.start()
-
-            # 等待所有线程完成
-            for t in threads:
-                t.join()
-
+        for video_name in config_info['video_names']:
+            instance_config = config_dict[video_name]
+            executor = InstanceFactory.get_instance_executor(new_instance, video_name, instance_config, data_dir)
+            t = threading.Thread(target=executor.execute, args=())
+            threads.append(t)
+            t.start()
+        for t in threads:
+            t.join()
     else:
         curr_key = keys[0]
         if isinstance(instances[curr_key], list):
             for each_parameter in instances[curr_key]:
                 new_instance[curr_key] = each_parameter
-                parameter_sweeping(instances, new_instance, keys[1:], config_info, config_dict, data_dir)
+                parameter_sweeping(instances, new_instance, keys[1:], config_info,config_dict, data_dir)
         else:
             new_instance[curr_key] = instances[curr_key]
-            parameter_sweeping(instances, new_instance, keys[1:], config_info, config_dict, data_dir)
+            parameter_sweeping(instances, new_instance, keys[1:], config_info,config_dict, data_dir)
+
 def create_instance_config_dict(config_info):
     print("create_instance_config_dict is defined and called")  # Add this line
     instance_config_dict = {}

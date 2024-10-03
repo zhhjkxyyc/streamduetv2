@@ -106,6 +106,8 @@ class RoICache:
 
         # 确保两个图像的尺寸匹配
         if prev_frame_gray.shape != current_frame_gray.shape:
+            print(prev_frame_gray.shape)
+            print(current_frame_gray.shape)
             raise ValueError("Previous frame and current frame have different sizes.")
 
         predicted_bboxes = Results()
@@ -152,7 +154,7 @@ class RoICache:
                 conf=bbox.conf,
                 label=bbox.label,
                 resolution=bbox.resolution,
-                origin="backend_predicted"
+                origin="fronted_predicted"
             )
             predicted_bboxes.add_single_result(new_bbox)
 

@@ -17,7 +17,7 @@ from dds_utils import *
 
 
 gt_confid_thresh_list = [0.3]
-mpeg_confid_thresh_list = [0.5]
+mpeg_confid_thresh_list = [0.6]
 # max_area_thresh_gt_list = [0.4]
 max_area_thresh_gt_list=[1000000]
 max_area_thresh_mpeg_list = max_area_thresh_gt_list

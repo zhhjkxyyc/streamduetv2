@@ -485,8 +485,12 @@ def calc_area(a):
 def calc_iou(a, b):
     intersection_area = calc_intersection_area(a, b)
     union_area = calc_area(a) + calc_area(b) - intersection_area
-    return intersection_area / union_area
 
+    # 检查 union_area 是否为 0，避免 ZeroDivisionError
+    if union_area == 0:
+        return 0.0  # IOU 为 0，表示没有重叠
+
+    return intersection_area / union_area
 
 def get_interval_area(width, all_yes):
     area = 0

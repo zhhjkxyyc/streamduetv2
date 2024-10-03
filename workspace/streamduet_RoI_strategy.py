@@ -68,8 +68,8 @@ class StreamDuetRoIStrategy(InstanceStrategy):
             # for fid in range(start_fid, end_fid):
             # temp_ori_regions=Region.merge_regions(base_req_regions_res.regions)
             base_req_regions_res = Results()
-            base_roi_regions,_=self.client.roi_cache.base_req_regions_res(high_images_path , start_fid, end_fid, final_results,large_block_width=64,
-                             large_block_height=64, n=5)
+            base_roi_regions,_=self.client.roi_cache.base_req_regions_res(high_images_path , start_fid, end_fid, final_results,large_block_width=32,
+                             large_block_height=32, n=5)
             for reg in base_roi_regions:
                 # 假设元组是 (x, y, w, h)
                 x = reg.x

@@ -2,20 +2,49 @@ import os
 import time
 import pickle
 from collections import deque
-from threading import Lock
+import threading
 import cv2
 import numpy as np
 from filelock import FileLock
 
 class InferenceCache:
-    def __init__(self, time_window, cache_dir, conf_threshold):
-        self.time_window = time_window
+    def __init__(self, time_window, cache_dir, conf_threshold, update_interval=0.1):
+        self.time_window = time_window  # Define the time window for frame search
         self.cache_dir = cache_dir
-        os.makedirs(cache_dir, exist_ok=True)
-        self.lock = Lock()
-        self.sift = cv2.SIFT_create()
-        self.conf_threshold = conf_threshold
+        self.conf_threshold = conf_threshold  # Confidence threshold for results
         self.memory_cache = {}
+        self.update_interval = update_interval
+        self._stop_event = threading.Event()
+        self.cache_lock = threading.Lock()
+        # Start the cache update thread
+        self.cache_update_thread = threading.Thread(target=self.update_cache_periodically)
+        self.cache_update_thread.daemon = True  # Daemon thread will exit with the program
+        self.cache_update_thread.start()
+    def update_cache_periodically(self):
+        while not self._stop_event.is_set():
+            print("Updating cache from disk...")
+            self.update_memory_cache()  # Load from cache.pkl
+            time.sleep(self.update_interval)
+
+
+    def update_memory_cache(self):
+        """
+        This function will load the cache from the cache.pkl file to the memory cache.
+        Runs in the background thread.
+        """
+        while not self._stop_event.is_set():
+            # Update memory cache from disk (cache.pkl)
+            for root, _, files in os.walk(self.cache_dir):
+                for file in files:
+                    if file == "cache.pkl":
+                        cache = self._load_cache(os.path.join(root, file))
+                        # Acquire lock to update the cache safely
+                        with self.cache_lock:
+                            for frame_id, timestamp, results, image_path in cache:
+                                # Add or update the memory cache
+                                self.memory_cache[image_path] = (frame_id, results)
+            time.sleep(self.update_interval)  # Wait before the next update
+
     def _current_time(self):
         return time.time()
 
@@ -42,7 +71,9 @@ class InferenceCache:
                 if region.feature is not None and 'keypoints' in region.feature:
                     region.feature['keypoints'] = self.dict_to_keypoints(region.feature['keypoints'])
         return cache
-
+    def stop(self):
+        self._stop_event.set()
+        self.cache_update_thread.join()
     def _save_cache(self, path, cache):
         # 将 keypoints 转换为可序列化的格式
         for frame_id, timestamp, results, image_path in cache:
@@ -71,79 +102,110 @@ class InferenceCache:
         os.makedirs(video_cache_dir, exist_ok=True)
         cache_path = self._get_cache_path(video_name)
         image_path = self._get_image_path(video_name, frame_id)
-        # lock_path = self._get_lock_path(video_name)
 
-        # Save the frame image if it does not already exist in memory cache or disk
-        if image_path not in self.memory_cache and not os.path.exists(image_path):
-            cv2.imwrite(image_path, frame_image)
-            # Save the frame image to memory cache
-            self.memory_cache[image_path] = frame_image
-        # Load, update, and save the cache
-        cache = self._load_cache(cache_path)
-        for region in results:
-            if region.feature is None:
-                cropped_cached_image = self._crop_image(frame_image, region)
-                feature=self.extract_features(cropped_cached_image)
-                region.feature=feature
-        cache.append((frame_id, self._current_time(), results, image_path))
-        self._cleanup(cache)
-        self._save_cache(cache_path, cache)
+        # Use lock to ensure thread-safe cache modification
+        with self.cache_lock:
+            # Check if the frame image is in memory cache or disk
+            # if image_path not in self.memory_cache and not os.path.exists(image_path):
+                # cv2.imwrite(image_path, frame_image)
+                # Save the frame image to memory cache
+                # self.memory_cache[image_path] = frame_image
+
+            # Load, update, and save the cache (both in-memory and on-disk)
+            cache = self._load_cache(cache_path)
+
+            # For each region in the results, extract features if needed
+            for region in results:
+                if region.feature is None:
+                    cropped_cached_image = self._crop_image(frame_image, region)
+                    feature = self.extract_features(cropped_cached_image)
+                    region.feature = feature
+
+            # Append the new result to the cache
+            cache.append((frame_id, self._current_time(), results, image_path))
+
+            # Clean up cache if necessary and save to disk
+            self._cleanup()
+            self._save_cache(cache_path, cache)
+
+            # Also update the memory cache with the latest results
+            self.memory_cache[image_path] = (frame_id, results)
 
     def get_best_result(self, bbox, query_image):
         best_result = None
         best_image_path = None
-        for root, _, files in os.walk(self.cache_dir):
-            for file in files:
-                if file == "cache.pkl":
-                    cache = self._load_cache(os.path.join(root, file))
-                    current_frame = self._get_max_frame(cache)
-                    min_frame = current_frame - self.time_window
-                    for frame_id, timestamp, results, image_path in cache:
-                        if frame_id < min_frame:
-                            continue
-                        # Load image from memory cache if available, otherwise load from disk
-                        if image_path in self.memory_cache:
-                            cached_image = self.memory_cache[image_path]
-                        else:
-                            cached_image = cv2.imread(image_path)
-                        if cached_image is None:
-                            continue
-                        cropped_query_image = self._crop_image(query_image, bbox)
-                        for region in results:
-                            # cropped_cached_image = self._crop_image(cached_image, result)
-                            if self.match_features(self.extract_features(cropped_query_image), region.feature):
-                                if best_result is None or region.conf > best_result.conf:
-                                    best_result = region
-                                    best_image_path = image_path
-                                    bbox.conf = best_result.conf
-                                    bbox.label = best_result.label
-                                    bbox.origin = "low-cache-res"
-                                    bbox.feature = region.feature
-                                    return bbox, best_image_path
+
+        # Access the in-memory cache (use lock to ensure safe access)
+        with self.cache_lock:
+            for image_path, (frame_id, results) in self.memory_cache.items():
+                current_frame = self._get_max_frame(self.memory_cache)
+                min_frame = current_frame - self.time_window
+
+                # Only process results within the time window
+                if frame_id < min_frame:
+                    continue
+
+                cropped_query_image = self._crop_image(query_image, bbox)
+
+                for region in results:
+                    # Match the feature if the confidence threshold is met
+                    if region.conf >= self.conf_threshold:
+                        if self.match_features(self.extract_features(cropped_query_image), region.feature):
+                            if best_result is None or region.conf > best_result.conf:
+                                best_result = region
+                                best_image_path = image_path
+                                bbox.conf = best_result.conf
+                                bbox.label = best_result.label
+                                bbox.origin = "low-cache-res"
+                                bbox.feature = region.feature
+                                return bbox, best_image_path
+
         return best_result, best_image_path
 
-    def _cleanup(self, cache):
-        if not cache:
+    def _cleanup(self):
+        if not self.memory_cache:
             return
 
-        current_frame = self._get_max_frame(cache)
-        min_frame = current_frame - self.time_window
-        min_frame_id = min(frame_id for frame_id, _, _, _ in cache)
+        # Find the maximum frame ID currently in memory cache
+        current_frame = self._get_max_frame(self.memory_cache)
 
-        while cache and min_frame_id < min_frame:
-            frame_id, _, _, image_path = cache.popleft()
+        # Calculate the minimum valid frame based on the time window
+        min_frame = current_frame - self.time_window
+
+        # Create a list of image paths to remove from memory_cache
+        keys_to_remove = []
+
+        # Traverse through the memory cache
+        for image_path, (frame_id, results) in self.memory_cache.items():
+            # If frame_id is older than the time window, mark it for removal
+            if frame_id < min_frame:
+                keys_to_remove.append(image_path)
+
+        # Remove the old frames from memory_cache and disk
+        for image_path in keys_to_remove:
+            # Remove from memory cache
+            del self.memory_cache[image_path]
+            # Optionally remove the corresponding image file from the disk if it exists
             if os.path.exists(image_path):
                 os.remove(image_path)
-            # Remove from memory cache
-            if image_path in self.memory_cache:
-                del self.memory_cache[image_path]
 
-            if cache:
-                min_frame_id = min(frame_id for frame_id, _, _, _ in cache)
     def _get_max_frame(self, cache):
         if not cache:
             return -1
-        return max(frame_id for frame_id, _, _, _ in cache)
+
+        valid_frame_ids = []
+        invalid_frame_ids = []
+
+        for video_path, frame_data_list in cache.items():
+            # 直接检查是否是整数，减少异常处理
+            frame_id = frame_data_list[0]
+            if isinstance(frame_id, int):
+                valid_frame_ids.append(frame_id)
+            else:
+                invalid_frame_ids.append(frame_id)
+
+        # 使用条件运算符返回结果
+        return max(valid_frame_ids, default=-1)
 
     def _crop_image(self, image, bbox):
         height, width = image.shape[:2]
